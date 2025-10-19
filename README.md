@@ -53,9 +53,4 @@ Click **Read Binary** → file dialog appears → choose `dump.bin` to save the 
 - The GUI relies on the Arduino slave protocol. Do not open the same serial port in another application during transfers.
 - The library supports `ew_enable()`/`ew_disable()` for write protection. The Arduino sketch uses `ew_enable()` before writes and `ew_disable()` after writing.
 
-## Files added/modified
-
-- `EEPROM_slave_fixed.ino` — Arduino slave sketch implementing the serial protocol.
-- `interactive_eeprom_ports.py` / `eeprom_gui.py` — interactive CLI and GUI tools for interacting with the EEPROM.
-- `standalone_eeprom_safe.py` — standalone scripts for scripted usage.
 
