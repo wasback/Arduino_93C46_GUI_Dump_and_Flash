@@ -1,117 +1,61 @@
 # 93C46 Library for Arduino
 
- **N.b. This library only works for chips in the 64x16 mode. If your chip support 128x8 mode, please make sure your ORG pin is tied to GND.**
- 128x8 support is planned in the future, i.e., when I get a chip that supports it.
-
-[93C46 Datasheet](http://ww1.microchip.com/downloads/en/DeviceDoc/doc5140.pdf)
+**Note:** This library works in 8-bit (128×8) or 16-bit (64×16) mode depending on ORG pin and the mode set via `set_mode()`. The examples below assume 8-bit (128 bytes) unless stated otherwise.
 
 ## Introduction
 
-The 93C46 is a 1KB EEPROM communicating over 3-wire serial, with an additional CS wire. As I could not find any ready-made solution, I decided to write this library. This library sends data to the chip by bitbanging, so it's not going to give the best performance.
+The 93C46 is a 1Kb EEPROM communicating over 3-wire serial (plus CS). This library implements bit-banged SPI-like access for reading and writing the chip. In addition to the Arduino-side library and examples, this repository now includes a **Python GUI tool** for reading, viewing, saving and flashing EEPROM images.
 
-## EW (Erase/Write)
+## New: Python GUI Tool
 
-When the chip is powered on, EW is disabled. This blocks our attempts to erase/write anything on the chip. Once enabled, EW will stay enabled until it is explicitly disabled or the chip loses power.
+A cross-platform `Tkinter` GUI (`eeprom_gui.py`) is provided to interact with the Arduino slave sketch:
 
-## Organization
+Features
+- Scan and pick serial port (port scanner)
+- Connect / disconnect to Arduino
+- Read raw binary dump and **save to .bin**
+- Read hex dump and show 8 lines × 16 bytes (128 bytes total)
+- Read printable ASCII text extracted from EEPROM
+- Flash a binary file to EEPROM (with size check and truncation to 128 bytes)
+- Virginize EEPROM: write `0xFF` to the entire EEPROM
+- Status and output log window
+- Simple, robust handshake with the Arduino slave (waits for `EEPROM Slave Ready`)
 
-Some 93C46 chips support different organizations. If the ORG pin is pulled high, the chip with organize itself in 64 words of 16 bits, if ORG is pulled low, it will organize itself as 128 words of 8 bits. The mode the library uses can be changed with `set_mode`. The library starts with 16-bit mode by default.
+### Requirements
 
-Data written into one organization may or may not be able to be read in the other organization. Your mileage may vary, have fun.
+- Python 3.x
+- PySerial
+- Tkinter (usually included with Python)
+- The Arduino sketch `EEPROM_slave_fixed.ino` (or your own sketch that follows the same serial protocol)
 
-Using the mode not corresponding to the chip organization will result in undefined behaviour.
+### Protocol between Arduino and GUI
 
-## Methods
+Commands (newline-terminated, ASCII):
+- `READ_BIN` → Arduino replies `BEGIN_BIN <N>\n` then sends N raw bytes, then `END_BIN\n`
+- `READ_HEX` → Arduino replies `BEGIN_HEX\n` then sends textual hex dump lines, then `END_HEX\n`
+- `READ_TEXT` → Arduino replies `BEGIN_TEXT\n` then sends printable text then `END_TEXT\n`
+- `WRITE_BIN <N>` → Arduino replies `READY\n`, GUI sends N raw bytes, Arduino replies `OK <checksum>\n` or `ERR <msg>\n`
 
-| Method | Returns | EW required | Description |
-| ------ | ------ | ------ | ------ |
-| `eeprom_93C46(int pCS, int pSK, int pDI, int pDO)` | - | - | Constructor |
-| `set_mode(bool longMode)` | `void` | No | `true` enables 16-bit mode, `false` enables 8-bit mode |
-| `ew_enable()` | `void` | No | Enables EW, disabled read-only mode |
-| `ew_disable()` | `void` | Yes | Disables  EW, returns to read-only mode |
-| `is_ew_enabled()` | `bool` | No | `true` if EW is enabled |
-| `erase_all()` | `void` | Yes | Changes all memory locations to `0xFFFF` |
-| `write_all(word value)` | `void` | Yes | Changes all memory locations to the provided value |
-| `write(byte addr, word value)` | `void` | Yes | Changes the provided memory location to the provided value |
-| `erase(byte addr)` | `void` | Yes | Changes the provided memory location to `0xFDFF`|
-| `read(byte addr)` | `word` | No | Returns the value of the provided memory location|
+### Using the GUI
 
-# Example
+1. Plug your Arduino and upload the Arduino slave sketch (the sketch prints `EEPROM Slave Ready` when ready).
+2. Run the GUI: `python eeprom_gui.py`
+3. Select the serial port from the dropdown, click **Connect**.
+4. Use buttons to read/save hex/text or flash a `.bin` file. Use **Write 0xFF** to virginize the chip.
 
-```
-#include <93C46.h>
-/*
- * Example Sketch demonstration on how to write to a 93C46 eeprom
- * 
- * Wiring:
- * Pin 7(CS) to Chip pin 1
- * Pin 9(SCK) to Chip pin 2
- * Pin 10(DI/MOSI) to Chip pin 3
- * Pin 11(DO/MISO) to Chip pin 4
- * GND to Chip pin 5
- * (For some chips:) GND/5V to pin 6 (This determines the organization, 5V is 16-bit, GND is 8-bit)
- * 5V to Chip pin 8
- * 
- */
-#define pCS 7
-#define pSK 9
-#define pDI 10
-#define pDO 11
+## Example: Save dump to file (binary)
 
-// Prints all words of the buffer
-void debugPrint(word* buff, int len) {
-  Serial.print("\n\t00\t01\t02\t03\t04\t05\t06\t07\t08\t09\t0A\t0B\t0C\t0D\t0E\t0F");
-  for(int i = 0; i < len; i++) {
-    if(i % 16 == 0) {
-      Serial.println();
-      Serial.print(i, HEX);
-    }
-    Serial.print("\t");
-    if(buff[i] < 0x10) {
-      Serial.print("0");
-    }
-    Serial.print(buff[i], HEX);
-  }
-}
+Click **Read Binary** → file dialog appears → choose `dump.bin` to save the raw 128 bytes.
 
-void setup() {
-  bool longMode = true; // Change this to 'false' to use the 8-bit mode
-  
-  eeprom_93C46 e = eeprom_93C46(pCS, pSK, pDI, pDO);
-  e.set_mode(longMode);
-  Serial.begin(9600);
+## Notes & Limitations
 
-  Serial.println("Writing data...");
-  // First, enable EW (Erase/Write)
-  e.ew_enable();
+- The Arduino sketch included assumes 8-bit organization (128 bytes). If you use 16-bit organization, adjust both the Arduino sketch (word handling) and GUI expectations.
+- The GUI relies on the Arduino slave protocol. Do not open the same serial port in another application during transfers.
+- The library supports `ew_enable()`/`ew_disable()` for write protection. The Arduino sketch uses `ew_enable()` before writes and `ew_disable()` after writing.
 
-  String writeBuffer;
-  if(longMode) {
-    writeBuffer = "This is a string written in the 16-bit organization.\nHi, world!\0";
-  } else {
-    writeBuffer = "This is a string written in the 8-bit organization.\nAs you can see, the address space for this mode is much bigger!\nHey, world!\0";
-  }
+## Files added/modified
 
-  int len = longMode ? 64 : 128;
-  // Write your data
-  for(int i = 0; i < len; i++) {
-    e.write(i, writeBuffer[i]);
-  }
+- `EEPROM_slave_fixed.ino` — Arduino slave sketch implementing the serial protocol.
+- `interactive_eeprom_ports.py` / `eeprom_gui.py` — interactive CLI and GUI tools for interacting with the EEPROM.
+- `standalone_eeprom_safe.py` — standalone scripts for scripted usage.
 
-  // Optionally, disable EW after writing
-  e.ew_disable();
-
-  Serial.println("Reading data...\n");
-  word readBuffer[len];
-  for(int i = 0; i < len; i++) {
-    word r = e.read(i);
-    readBuffer[i] = r;
-    Serial.print(char(r));
-  }
-  debugPrint(readBuffer, len);
-  Serial.println();
-  delay(500);
-}
-
-void loop() {}
-```
